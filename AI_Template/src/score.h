@@ -3,15 +3,7 @@
 #include <queue>
 
 
-void resetScore(AI* pAI);
+void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay);
 
-void line(AI* pAI, int sx, int sy, int ex, int ey, int change);
-
-void cross(AI* pAI, int sx, int sy, bool ho, bool ve, int change);
-
-void targetInline(AI* pAI);
-void allySpot(AI* pAI);
-
-void bulletInline(AI* pAI);
-
-int move(AI* pAI, Tank* tank);
+void calculateMap(AI* pAI);
+int getSmartMove(AI* pAI, Tank* tank);

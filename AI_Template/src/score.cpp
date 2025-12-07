@@ -1,238 +1,169 @@
 
 #include "score.h"
 
-int map[22][22];
+int grid[22][22];
 
+bool isWalkable(AI* pAI, float x, float y) {
+    if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
-void resetScore(AI* pAI) {
-	
-	for (int y = 0; y < 22; y++) {
-		for (int x = 0; x < 22; x++) {
-			int t = 0;
-			switch (pAI->GetBlock(x,y))
-			{
-			case BLOCK_HARD_OBSTACLE:
-				t = INT_MIN;
-				break;
-			case BLOCK_WATER:
-				t = INT_MIN;
-				break;
-			case BLOCK_SOFT_OBSTACLE:
-				t = INT_MIN;
-				break;
-			default:
-				t = 0;
-				break;
-			}
-			map[x][y] = t;
-		}
-	}
+    for (int i= floor(x+0.1); i <= ceil(y-0.1); i++) {
+        for (int j = floor(x + 0.1); j <= ceil(y - 0.1); j++) {
+            int b = pAI->GetBlock(i, j);
+            if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE || b == BLOCK_WATER)
+                return false;
+
+        }
+    }
+    return true;
 }
 
-bool passable(AI* pAI, float x, float y) {
-	for (int i = floor(x); i <= ceil(x); i++) {
-		for (int j = floor(y); j <= ceil(y); j++) {
-			switch (pAI->GetBlock(i, j))
-			{
-			case BLOCK_HARD_OBSTACLE:
-				return false;
-			case BLOCK_WATER:
-				return false;
-			case BLOCK_SOFT_OBSTACLE:
-				return false;
-			case BLOCK_OUT_OF_BOARD:
-				return false;
-			default:
-				break;
-			}
+bool isShootable(AI* pAI, float x, float y) {
+    if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
-		}
-	}
-	return true;
-}
-
-bool shootable(AI* pAI, float x, float y) {
-	for (int i = floor(x); i <= ceil(x); i++) {
-		for (int j = floor(y); j <= ceil(y); j++) {
-			switch (pAI->GetBlock(i, j))
-			{
-			case BLOCK_HARD_OBSTACLE:
-				return false;
-			case BLOCK_SOFT_OBSTACLE:
-				return false;
-			case BLOCK_OUT_OF_BOARD:
-				return false;
-			default:
-				break;
-			}
-
-		}
-	}
-	return true;
-}
-
-void line(AI* pAI, int sx, int sy, int ex, int ey, int change)
-{
-	if (sx == ex) {
-		int dir = sy < ey ? 1 : -1;
-
-		for (int y = sy; y <= ey; y += dir) {
-			if (!shootable(pAI,sx,y)) {
-				break;
-			}
-			map[sx][y] += change;
-		}
-	}
-	else {
-		int dir = sx < ex ? 1 : -1;
-
-		for (int x = sx; x <= ex; x += dir) {
-			if (!shootable(pAI, x, sy)) break;
-			map[x][sy] += change;
-		}
-	}
+    for (int i = floor(x + 0.1); i <= ceil(y - 0.1); i++) {
+        for (int j = floor(x + 0.1); j <= ceil(y - 0.1); j++) {
+            int b = pAI->GetBlock(i, j);
+            if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE)
+                return false;
+        }
+    }
+    return true;
 }
 
 
 
-void cross(AI* pAI, int sx, int sy, bool ho, bool ve, int change) {
-	//improve
-	if (ho) {
-		line(pAI, sx+1, sy, 21, sy, change);
-		line(pAI, sx, sy, 0, sy, change);
-	}
-	if (ve) {
-		line(pAI, sx, sy+1, sx, 21, change);
-		line(pAI, sx, sy, sx, 0, change);
-	}
+void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay) {
+    int cx = sx;
+    int cy = sy;
+    int cur = startVal;
 
-}
-std::pair<int, int> nextFrame(int x, int y, float velocity, int dir) {
-	switch (dir)
-	{
-	case 1:
-		return { x,y - std::ceil(velocity) };
-	case 2:
-		return { x + std::ceil(velocity)  ,y };
-	case 3:
-		return { x,y + std::ceil(velocity) };
+    while (true) {
+        cx += dx;
+        cy += dy;
 
-	default:
-		return { x - std::ceil(velocity ) ,y };
-	}
+        if (!isShootable(pAI, cx, cy)) break;
+
+        grid[cx][cy] += cur;
+
+        if (startVal < 0) cur += decay;
+        else cur -= decay;
+
+        if ((startVal < 0 && cur >= 0) || (startVal > 0 && cur <= 0)) break;
+    }
 }
 
-void targetInline(AI* pAI)
-{
-	for (int i = 0; i < NUMBER_OF_TANK; i++) {
-		Tank* tempTank = pAI->GetEnemyTank(i);
-		//don't waste effort if tank's death
-		if ((tempTank == NULL) || (tempTank->GetHP() == 0))
-			continue;
+void calculateMap(AI* pAI) {
+    // A. Reset Grid
+    for (int y = 0; y < 22; y++)
+        for (int x = 0; x < 22; x++)
+            grid[x][y] = 0;
 
-		std::pair<int, int> t = nextFrame(tempTank->GetX(), tempTank->GetY(), tempTank->GetSpeed(), tempTank->GetDirection());
-		cross(pAI, t.first, t.second,true,true, 100);
-		//more base on speed
+    // B. Mark Bullets
+    auto bullets = pAI->GetEnemyBullets();
+    for (auto b : bullets) {
+        // Map direction 1..4 to dx/dy
+        int dx = 0, dy = 0;
+        int d = b->GetDirection();
+        if (d == 1) dy = -1;
+        if (d == 2) dx = 1;
+        if (d == 3) dy = 1;
+        if (d == 4) dx = -1;
 
-	}
-	std::vector<Base*> bases = pAI->GetEnemyBases();
+        castRay(pAI, round(b->GetX()), round(b->GetY()), dx, dy, -10000, 500);
+    }
 
-	//for (int i = 0; i < bases.size(); i++) {
-	//
-		//cross(pAI, bases[i]->GetX(), bases[i]->GetY(), true,true,20);
+    // C. Mark Enemies
+    for (int i = 0; i < NUMBER_OF_TANK; i++) {
+        Tank* t = pAI->GetEnemyTank(i);
+        if (!t || t->GetHP() == 0) continue;
 
-	//}
+        int tx = round(t->GetX());
+        int ty = round(t->GetY());
+
+        castRay(pAI, tx, ty, 0, -1, 500, 0); // Up
+        castRay(pAI, tx, ty, 0, 1, 500, 0); // Down
+        castRay(pAI, tx, ty, -1, 0, 500, 0); // Left
+        castRay(pAI, tx, ty, 1, 0, 500, 0); // Right
+    }
 }
 
-void allySpot(AI* pAI)
-{
-	for (int i = 0; i < NUMBER_OF_TANK; i++) {
-		Tank* tempTank = pAI->GetMyTank(i);
-		//don't waste effort if tank's death
-		if ((tempTank == NULL) || (tempTank->GetHP() == 0))
-			continue;
+struct Node { int x, y, firstDir; };
 
-		map[(int)tempTank->GetX()][(int)tempTank->GetY()] = -50;
+// =========================================================
+// 4. GET SMART MOVE (Float-First BFS)
+// =========================================================
+int getSmartMove(AI* pAI, Tank* tank) {
+    int myX = round(tank->GetX());
+    int myY = round(tank->GetY());
+    float fx = tank->GetX();
+    float fy = tank->GetY();
 
-	}	
+    // --- STEP 1: Find Best Goal ---
+    int bestScore = -999999;
+    int tx = myX, ty = myY;
+
+    for (int i = 1; i < 21; i++) {
+        for (int j = 1; j < 21; j++) {
+            if (!isWalkable(pAI, i, j)) {
+                continue;
+            }
+
+            // Distance Cost: 10 points per step.
+            // This ensures we pick the NEAREST tile on the "Shooting Line".
+            int dist = abs(i - myX) + abs(j - myY);
+            int score = grid[i][j] - (dist * 10);
+
+            if (score > bestScore) {
+                bestScore = score;
+                tx = i; ty = j;
+            }
+        }
+    }
+
+
+    // If satisfied, stay.
+    if (tx == myX && ty == myY) return 0;
+
+    // --- STEP 2: Float-First Queue Init (The Anti-Snap Fix) ---
+    std::queue<Node> q;
+    bool visited[22][22] = { false };
+
+    // Up, Right, Down, Left
+    int dx[] = { 0, 0, 1, 0, -1 };
+    int dy[] = { 0, -1, 0, 1, 0 };
+
+    // Try all 4 physical directions first
+    for (int dir = 1; dir <= 4; dir++) {
+        // Look ahead 0.5 units
+        float nextFX = fx + dx[dir];
+        float nextFY = fy + dy[dir];
+
+        // Does the tank FIT there?
+        if (isWalkable(pAI, nextFX, nextFY)) {
+            int nextIX = round(nextFX);
+            int nextIY = round(nextFY);
+
+            visited[nextIX][nextIY] = true;
+            q.push({ nextIX, nextIY, dir });
+        }
+    }
+
+    // --- STEP 3: Integer BFS ---
+    while (!q.empty()) {
+        Node n = q.front(); q.pop();
+
+        if (n.x == tx && n.y == ty) return n.firstDir;
+
+        for (int i = 1; i <= 4; i++) {
+            int nx = n.x + dx[i];
+            int ny = n.y + dy[i];
+
+            if(isWalkable(pAI,nx,ny)&& !visited[nx][ny]){
+                visited[nx][ny] = true;
+                q.push({ nx, ny, n.firstDir });
+            }
+        }
+    }
+
+    return 0; // No path
 }
-
-
-void bulletInline(AI* pAI)
-{
-	std::vector<Bullet*> bullets = pAI->GetEnemyBullets();
-
-	for (int i = 0; i < bullets.size(); i++) {
-		line(pAI, bullets[i]->GetX(), bullets[i]->GetY(),
-			nextFrame(bullets[i]->GetX(), bullets[i]->GetY(), bullets[i]->GetSpeed()+1, bullets[i]->GetDirection()).first,
-			nextFrame(bullets[i]->GetX(), bullets[i]->GetY(), bullets[i]->GetSpeed()+1, bullets[i]->GetDirection()).second,
-			-10 * bullets[i]->GetDamage());
-	}
-}
-
-
-int cost(float sx, float sy, float ex, float ey) {
-	return 5*(std::abs(sx - ex) + std::abs(sy- ey));
-}
-
-int move(AI* pAI, Tank* tank)
-{
-	int searchLimit = 100;
-	std::priority_queue<std::vector<int>> queue;
-	float x = tank->GetX();
-	float y = tank->GetY();
-	std::vector<std::vector<int>> checked(22,std::vector<int>(22,false));
-
-
-	std::vector<std::pair<int, int>> dir = {
-		{0,0},  // dummy for index 0
-		{0,-1}, // 1 = UP
-		{1,0},  // 2 = RIGHT
-		{0,1},  // 3 = DOWN
-		{-1,0}  // 4 = LEFT
-	};
-
-	std::vector<int> best = { map[int(round(x))][int(round(y))],0 };
-	for (int i = 1; i < dir.size();i++) {
-		float nx = x + dir[i].first;
-		float ny = y + dir[i].second;
-		if (!passable(pAI, nx, ny)) continue;
-		int nv = map[int(round(x))][int(round(y))] - cost(x, nx, y, ny);
-		if (best[0] < nv) {
-			best = { nv ,i};
-		}
-		if (checked[int(round(nx))][int(round(ny))]) continue;
-		checked[int(round(nx))][int(round(ny))] = true;
-
-		queue.push({ map[int(round(nx))][int(round(ny))],int(round(nx)),int(round(ny)),i});
-	}
-	while (queue.size() > 0 && searchLimit) {
-		searchLimit--;
-		int v=queue.top()[0];
-		int tx = queue.top()[1];
-		int ty = queue.top()[2];
-		int od = queue.top()[3];
-		queue.pop();
-
-		for (auto d : dir) {
-			int nx = tx + d.first;
-			int ny = ty + d.second;
-			if (!passable(pAI,nx, ny)) continue;
-			int nv = map[nx][ny] - cost(x, nx, y, ny);
-			if (best[0] < nv) {
-				best = { nv ,od };
-			}
-			if(checked[nx][ny]) continue;
-			checked[nx][ny] = true;
-
-			queue.push({ nv ,nx,ny,od });
-		}
-	}
-	return best[1];
-}
-
-
-
-
-
-

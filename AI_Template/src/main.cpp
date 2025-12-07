@@ -124,16 +124,12 @@ void AI_Update()
 		}
 	}
 
-	resetScore(p_AI);
-	targetInline(p_AI);
-	bulletInline(p_AI);
-	allySpot(p_AI);
-
 	// =========================================================================================================
 	// This is an example on how you command your tanks.
 	// In this example, I go through all of my "still intact" tanks, and give them random commands.
 	// =========================================================================================================
 	// Loop through all tank (if not dead yet)
+	calculateMap(p_AI);
 	for (int i = 0; i<NUMBER_OF_TANK; i++) {
 		Tank* tempTank = p_AI->GetMyTank(i);
 		//don't waste effort if tank's death
@@ -142,8 +138,7 @@ void AI_Update()
 		
 		// Run randomly and fire as soon as cooldown finish.
 		// You may want a more ... intelligent algorithm here.
-		
-		int dir = move(p_AI, tempTank);
+		int dir = getSmartMove(p_AI, tempTank);
 		bool move = (dir == 0) ? false : true;
 		bool fire = true;
 
