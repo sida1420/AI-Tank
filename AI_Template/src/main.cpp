@@ -138,9 +138,9 @@ void AI_Update()
 		
 		// Run randomly and fire as soon as cooldown finish.
 		// You may want a more ... intelligent algorithm here.
-		int dir = getSmartMove(p_AI, tempTank);
+		int dir = getSmartMove(p_AI, i);
 		bool move = (dir == 0) ? false : true;
-		bool fire = true;
+		bool fire = false;
 
 		Game::CommandTank(i, (dir==0)?NULL:dir, move, fire);
 		/*

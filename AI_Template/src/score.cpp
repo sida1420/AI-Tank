@@ -3,17 +3,29 @@
 
 int grid[22][22];
 
-bool isWalkable(AI* pAI, float x, float y) {
+bool isWalkable(AI* pAI, float x, float y, int id=-1) {
     if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
-    for (int i= floor(x+0.1); i <= ceil(y-0.1); i++) {
-        for (int j = floor(x + 0.1); j <= ceil(y - 0.1); j++) {
+    for (int i= floor(x+0.1); i <= ceil(x-0.1); i++) {
+        for (int j = floor(y + 0.1); j <= ceil(y - 0.1); j++) {
             int b = pAI->GetBlock(i, j);
             if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE || b == BLOCK_WATER)
                 return false;
-
         }
     }
+    
+    for (int i = 0; i < NUMBER_OF_TANK; i++) {
+        if (id == i) continue;
+        Tank* t = pAI->GetMyTank(i);
+        if (abs(t->GetX() - x) < 1 && abs(t->GetY() - y) < 1)
+            return false;
+        t = pAI->GetEnemyTank(i);
+        if (abs(t->GetX() - x) < 1 && abs(t->GetY() - y) < 1)
+            return false;
+
+    }
+    
+
     return true;
 }
 
@@ -56,9 +68,14 @@ void calculateMap(AI* pAI) {
     // A. Reset Grid
     for (int y = 0; y < 22; y++)
         for (int x = 0; x < 22; x++)
-            grid[x][y] = 0;
+        {
+            if (isWalkable(pAI, x, y))
+                grid[x][y] = 0;
+            else grid[x][y] = -10000;
+        }
 
     // B. Mark Bullets
+    
     auto bullets = pAI->GetEnemyBullets();
     for (auto b : bullets) {
         // Map direction 1..4 to dx/dy
@@ -69,16 +86,19 @@ void calculateMap(AI* pAI) {
         if (d == 3) dy = 1;
         if (d == 4) dx = -1;
 
-        castRay(pAI, round(b->GetX()), round(b->GetY()), dx, dy, -10000, 500);
+        castRay(pAI, floor(b->GetX()), floor(b->GetY()), dx, dy, -10000, 0);
     }
 
     // C. Mark Enemies
     for (int i = 0; i < NUMBER_OF_TANK; i++) {
         Tank* t = pAI->GetEnemyTank(i);
-        if (!t || t->GetHP() == 0) continue;
+        int tx = round(t->GetX()-0.5);
+        int ty = round(t->GetY()-0.5);
+        grid[tx][ty] -= 10000;
+        if (!t || t->GetHP() == 0) {
+            continue;
+        }
 
-        int tx = round(t->GetX());
-        int ty = round(t->GetY());
 
         castRay(pAI, tx, ty, 0, -1, 500, 0); // Up
         castRay(pAI, tx, ty, 0, 1, 500, 0); // Down
@@ -92,32 +112,37 @@ struct Node { int x, y, firstDir; };
 // =========================================================
 // 4. GET SMART MOVE (Float-First BFS)
 // =========================================================
-int getSmartMove(AI* pAI, Tank* tank) {
+int getSmartMove(AI* pAI, int id) {
+    auto tank = pAI->GetMyTank(id);
     int myX = round(tank->GetX());
     int myY = round(tank->GetY());
-    float fx = tank->GetX();
-    float fy = tank->GetY();
+    float fx = tank->GetX()-0.5;
+    float fy = tank->GetY()-0.5;
 
     // --- STEP 1: Find Best Goal ---
     int bestScore = -999999;
     int tx = myX, ty = myY;
 
+    //std::cout << "MAP\n";
     for (int i = 1; i < 21; i++) {
         for (int j = 1; j < 21; j++) {
-            if (!isWalkable(pAI, i, j)) {
+           // std::cout << grid[j][i] << "\t";
+            if (!isWalkable(pAI, i, j, id)) {
                 continue;
             }
+            
 
             // Distance Cost: 10 points per step.
             // This ensures we pick the NEAREST tile on the "Shooting Line".
             int dist = abs(i - myX) + abs(j - myY);
-            int score = grid[i][j] - (dist * 10);
+            int score = grid[i][j] - (dist * 100);
 
             if (score > bestScore) {
                 bestScore = score;
                 tx = i; ty = j;
             }
         }
+        //std::cout << "\n";
     }
 
 
@@ -139,7 +164,7 @@ int getSmartMove(AI* pAI, Tank* tank) {
         float nextFY = fy + dy[dir];
 
         // Does the tank FIT there?
-        if (isWalkable(pAI, nextFX, nextFY)) {
+        if (isWalkable(pAI, nextFX, nextFY,id)) {
             int nextIX = round(nextFX);
             int nextIY = round(nextFY);
 
@@ -158,7 +183,7 @@ int getSmartMove(AI* pAI, Tank* tank) {
             int nx = n.x + dx[i];
             int ny = n.y + dy[i];
 
-            if(isWalkable(pAI,nx,ny)&& !visited[nx][ny]){
+            if(isWalkable(pAI,nx,ny,id)&& !visited[nx][ny]){
                 visited[nx][ny] = true;
                 q.push({ nx, ny, n.firstDir });
             }

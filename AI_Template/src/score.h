@@ -6,4 +6,4 @@
 void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay);
 
 void calculateMap(AI* pAI);
-int getSmartMove(AI* pAI, Tank* tank);
+int getSmartMove(AI* pAI, int id);
