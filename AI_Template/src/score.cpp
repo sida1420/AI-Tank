@@ -2,38 +2,42 @@
 #include "score.h"
 
 int grid[22][22];
+int cost[22][22];
 
-bool isWalkable(AI* pAI, float x, float y, int id=-1) {
+bool isWalkable(AI* pAI, float x, float y) {
     if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
-    for (int i= floor(x+0.1); i <= ceil(x-0.1); i++) {
-        for (int j = floor(y + 0.1); j <= ceil(y - 0.1); j++) {
+    for (int i= floor(x+0.01); i <= ceil(x-0.01); i++) {
+        for (int j = floor(y + 0.01); j <= ceil(y - 0.01); j++) {
             int b = pAI->GetBlock(i, j);
             if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE || b == BLOCK_WATER)
                 return false;
         }
     }
     
+
+    return true;
+}
+
+bool collision(AI* pAI, float x, float y, int id) {
+
     for (int i = 0; i < NUMBER_OF_TANK; i++) {
         if (id == i) continue;
         Tank* t = pAI->GetMyTank(i);
         if (abs(t->GetX() - x) < 1 && abs(t->GetY() - y) < 1)
-            return false;
+            return true;
         t = pAI->GetEnemyTank(i);
         if (abs(t->GetX() - x) < 1 && abs(t->GetY() - y) < 1)
-            return false;
-
+            return true;
     }
-    
-
-    return true;
+    return false;
 }
 
 bool isShootable(AI* pAI, float x, float y) {
     if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
-    for (int i = floor(x + 0.1); i <= ceil(y - 0.1); i++) {
-        for (int j = floor(x + 0.1); j <= ceil(y - 0.1); j++) {
+    for (int i = floor(x + 0.01); i <= ceil(x - 0.01); i++) {
+        for (int j = floor(y + 0.01); j <= ceil(y - 0.01); j++) {
             int b = pAI->GetBlock(i, j);
             if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE)
                 return false;
@@ -44,7 +48,7 @@ bool isShootable(AI* pAI, float x, float y) {
 
 
 
-void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay) {
+void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bool costAffect=false) {
     int cx = sx;
     int cy = sy;
     int cur = startVal;
@@ -56,6 +60,7 @@ void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay) {
         if (!isShootable(pAI, cx, cy)) break;
 
         grid[cx][cy] += cur;
+        if (costAffect) cost[cx][cy] += cur;
 
         if (startVal < 0) cur += decay;
         else cur -= decay;
@@ -69,9 +74,15 @@ void calculateMap(AI* pAI) {
     for (int y = 0; y < 22; y++)
         for (int x = 0; x < 22; x++)
         {
-            if (isWalkable(pAI, x, y))
+            if (isWalkable(pAI, x, y)) {
                 grid[x][y] = 0;
-            else grid[x][y] = -10000;
+                cost[x][y] = 0;
+
+            }
+            else {
+                grid[x][y] = -10000;
+                cost[x][y] = -10000;
+            }
         }
 
     // B. Mark Bullets
@@ -86,28 +97,33 @@ void calculateMap(AI* pAI) {
         if (d == 3) dy = 1;
         if (d == 4) dx = -1;
 
-        castRay(pAI, floor(b->GetX()), floor(b->GetY()), dx, dy, -10000, 0);
+        castRay(pAI, round(b->GetX()), round(b->GetY()), dx, dy, -500*b->GetDamage(), 500, true);
     }
 
     // C. Mark Enemies
     for (int i = 0; i < NUMBER_OF_TANK; i++) {
         Tank* t = pAI->GetEnemyTank(i);
-        int tx = round(t->GetX()-0.5);
-        int ty = round(t->GetY()-0.5);
+        int tx = round(t->GetX());
+        int ty = round(t->GetY());
         grid[tx][ty] -= 10000;
         if (!t || t->GetHP() == 0) {
             continue;
         }
 
 
-        castRay(pAI, tx, ty, 0, -1, 500, 0); // Up
-        castRay(pAI, tx, ty, 0, 1, 500, 0); // Down
-        castRay(pAI, tx, ty, -1, 0, 500, 0); // Left
-        castRay(pAI, tx, ty, 1, 0, 500, 0); // Right
+        castRay(pAI, tx, ty, 0, -1, 500, 0, false); // Up
+        castRay(pAI, tx, ty, 0, 1, 500, 0, false); // Down
+        castRay(pAI, tx, ty, -1, 0, 500, 0, false); // Left
+        castRay(pAI, tx, ty, 1, 0, 500, 0, false); // Right
     }
 }
 
-struct Node { int x, y, firstDir; };
+struct Node { int x, y, g, h, firstDir;
+    int f() const 
+    { return -g - h; }
+    bool operator<(const Node& other) const 
+    { return f() < other.f(); }
+};
 
 // =========================================================
 // 4. GET SMART MOVE (Float-First BFS)
@@ -116,8 +132,8 @@ int getSmartMove(AI* pAI, int id) {
     auto tank = pAI->GetMyTank(id);
     int myX = round(tank->GetX());
     int myY = round(tank->GetY());
-    float fx = tank->GetX()-0.5;
-    float fy = tank->GetY()-0.5;
+    float fx = tank->GetX();
+    float fy = tank->GetY();
 
     // --- STEP 1: Find Best Goal ---
     int bestScore = -999999;
@@ -127,7 +143,7 @@ int getSmartMove(AI* pAI, int id) {
     for (int i = 1; i < 21; i++) {
         for (int j = 1; j < 21; j++) {
            // std::cout << grid[j][i] << "\t";
-            if (!isWalkable(pAI, i, j, id)) {
+            if (!isWalkable(pAI, i, j)) {
                 continue;
             }
             
@@ -135,7 +151,7 @@ int getSmartMove(AI* pAI, int id) {
             // Distance Cost: 10 points per step.
             // This ensures we pick the NEAREST tile on the "Shooting Line".
             int dist = abs(i - myX) + abs(j - myY);
-            int score = grid[i][j] - (dist * 100);
+            int score = grid[i][j] - (dist * 100)-(collision(pAI,i,j,id)?5000:0);
 
             if (score > bestScore) {
                 bestScore = score;
@@ -147,11 +163,12 @@ int getSmartMove(AI* pAI, int id) {
 
 
     // If satisfied, stay.
-    if (tx == myX && ty == myY) return 0;
+    if (abs(tx -fx)<0.01 && abs(ty-fy) <0.01) return 0;
 
     // --- STEP 2: Float-First Queue Init (The Anti-Snap Fix) ---
-    std::queue<Node> q;
-    bool visited[22][22] = { false };
+    std::priority_queue<Node> pq; 
+    int dist[22][22];
+    for (int i = 0; i < 22; i++) for (int j = 0; j < 22; j++) dist[i][j] = 999999;
 
     // Up, Right, Down, Left
     int dx[] = { 0, 0, 1, 0, -1 };
@@ -159,33 +176,38 @@ int getSmartMove(AI* pAI, int id) {
 
     // Try all 4 physical directions first
     for (int dir = 1; dir <= 4; dir++) {
-        // Look ahead 0.5 units
-        float nextFX = fx + dx[dir];
-        float nextFY = fy + dy[dir];
+        float nextFX = fx + 0.5*dx[dir];
+        float nextFY = fy + 0.5*dy[dir];
 
         // Does the tank FIT there?
-        if (isWalkable(pAI, nextFX, nextFY,id)) {
-            int nextIX = round(nextFX);
-            int nextIY = round(nextFY);
+        if (isWalkable(pAI, nextFX, nextFY)) {
+            int nextIX = round(fx + dx[dir]);
+            int nextIY = round(fy + dy[dir]);
 
-            visited[nextIX][nextIY] = true;
-            q.push({ nextIX, nextIY, dir });
+            dist[nextIX][nextIY] = 0;
+            pq.push({ nextIX, nextIY,abs(cost[nextIX][nextIY]) +(collision(pAI,nextIX,nextIY,id) ? 1000 : 0), int(abs(tx - nextIX) + abs(ty - nextIY)) , dir });
         }
     }
 
-    // --- STEP 3: Integer BFS ---
-    while (!q.empty()) {
-        Node n = q.front(); q.pop();
+    // --- STEP 3: Integer A* ---
+    int limit = 400 ;
+    while (!pq.empty()&&limit--) {
+        Node n = pq.top(); pq.pop();
 
         if (n.x == tx && n.y == ty) return n.firstDir;
+
+
 
         for (int i = 1; i <= 4; i++) {
             int nx = n.x + dx[i];
             int ny = n.y + dy[i];
 
-            if(isWalkable(pAI,nx,ny,id)&& !visited[nx][ny]){
-                visited[nx][ny] = true;
-                q.push({ nx, ny, n.firstDir });
+            int h = int(abs(tx - nx) + abs(ty - ny));
+            int g = n.g + abs(cost[nx][ny]) + 100 -  (collision(pAI,nx,ny,id)?1000:0);
+            if (isWalkable(pAI, nx, ny) && g < dist[nx][ny])
+            {
+                dist[nx][ny] = g;
+                pq.push({ nx, ny,g,h, n.firstDir });
             }
         }
     }
