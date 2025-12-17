@@ -54,8 +54,6 @@ void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, b
     int cur = startVal;
 
     while (true) {
-        cx += dx;
-        cy += dy;
 
         if (!isShootable(pAI, cx, cy)) break;
 
@@ -66,6 +64,8 @@ void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, b
         else cur -= decay;
 
         if ((startVal < 0 && cur >= 0) || (startVal > 0 && cur <= 0)) break;
+        cx += dx;
+        cy += dy;
     }
 }
 
@@ -167,8 +167,7 @@ int getSmartMove(AI* pAI, int id) {
 
     // --- STEP 2: Float-First Queue Init (The Anti-Snap Fix) ---
     std::priority_queue<Node> pq; 
-    int dist[22][22];
-    for (int i = 0; i < 22; i++) for (int j = 0; j < 22; j++) dist[i][j] = 999999;
+    bool check[22][22] = { false };
 
     // Up, Right, Down, Left
     int dx[] = { 0, 0, 1, 0, -1 };
@@ -176,22 +175,37 @@ int getSmartMove(AI* pAI, int id) {
 
     // Try all 4 physical directions first
     for (int dir = 1; dir <= 4; dir++) {
-        float nextFX = fx + 0.5*dx[dir];
-        float nextFY = fy + 0.5*dy[dir];
+        float nextFX;
+        float nextFY;
+
+        float eps = 0.1f;
+
+        if (dx[dir] == 1)       nextFX = floor(fx + eps) + 1; // Right: 6.75 -> 7; 7.0 -> 8
+        else if (dx[dir] == -1) nextFX = ceil(fx - eps) - 1;  // Left:  6.75 -> 6; 7.0 -> 6
+        else                    nextFX = fx + 0.5 * dx[dir];           // Vertical: Keep current X Round
+
+        // 2. Calculate Next Y Integer
+        if (dy[dir] == 1)       nextFY = floor(fy + eps) + 1; // Down
+        else if (dy[dir] == -1) nextFY = ceil(fy - eps) - 1;  // Up
+        else                    nextFY = fy + 0.5 * dy[dir];
 
         // Does the tank FIT there?
         if (isWalkable(pAI, nextFX, nextFY)) {
-            int nextIX = round(fx + dx[dir]);
-            int nextIY = round(fy + dy[dir]);
+            int nextIX = round(nextFX);
+            int nextIY = round(nextFY);
 
-            dist[nextIX][nextIY] = 0;
+            check[nextIX][nextIY] = true;
             pq.push({ nextIX, nextIY,abs(cost[nextIX][nextIY]) +(collision(pAI,nextIX,nextIY,id) ? 1000 : 0), int(abs(tx - nextIX) + abs(ty - nextIY)) , dir });
         }
     }
 
     // --- STEP 3: Integer A* ---
     int limit = 400 ;
-    while (!pq.empty()&&limit--) {
+    while (!pq.empty()) {
+        limit--;
+        if (limit == 0) {
+            return pq.top().firstDir;
+        }
         Node n = pq.top(); pq.pop();
 
         if (n.x == tx && n.y == ty) return n.firstDir;
@@ -203,10 +217,10 @@ int getSmartMove(AI* pAI, int id) {
             int ny = n.y + dy[i];
 
             int h = int(abs(tx - nx) + abs(ty - ny));
-            int g = n.g + abs(cost[nx][ny]) + 100 -  (collision(pAI,nx,ny,id)?1000:0);
-            if (isWalkable(pAI, nx, ny) && g < dist[nx][ny])
+            int g = n.g + abs(cost[nx][ny]) + 100 +  (collision(pAI,nx,ny,id)?1000:0);
+            if (isWalkable(pAI, nx, ny) && !check[nx][ny])
             {
-                dist[nx][ny] = g;
+                check[nx][ny] = true;
                 pq.push({ nx, ny,g,h, n.firstDir });
             }
         }
