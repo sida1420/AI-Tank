@@ -4,6 +4,18 @@
 int grid[22][22];
 int cost[22][22];
 
+
+
+
+
+
+
+
+
+
+
+
+
 bool isWalkable(AI* pAI, float x, float y) {
     if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
@@ -46,16 +58,90 @@ bool isShootable(AI* pAI, float x, float y) {
     return true;
 }
 
+struct hitbox {
+    float x1, x2, y1, y2;
+    hitbox(float x1, float x2, float y1, float y2) {
+        this->x1 = min(x1, x2);
+        this->x2 = max(x1, x2);
+        this->y1 = min(y1, y2);
+        this->y2 = min(y1, y2);
+    }
+};
+ 
+
+hitbox toHB(float x, float y, float width, float height, int dx, int dy, float v) {
+    float x1=min(x,x+dx*v), x2=max(x+width,x+width+dx*v), y1=min(y,y+dy*v), y2=max(y+height,y+height+dy*v);
+
+    hitbox hb( x1,x2,y1,y2 );
+    return hb;
+}
 
 
-void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bool costAffect=false) {
+int trigger(AI* pAI, int id) {
+    Tank* t = pAI->GetMyTank(id);
+
+    //List all hitboxes of enemy tank
+    int dx[] = { 0, 0, 1, 0, -1 };
+    int dy[] = { 0, -1, 0, 1, 0 };
+    for (int i = 1; i <= 4; i++) {
+        int dist = castRay(pAI, t->GetX(), t->GetY(), dx[i], dy[i], 0, 0);
+        hitbox lineHitbox( t->GetX(),t->GetY(),t->GetX() + dx[i] *  dist, t->GetY() +dy[i] * dist );
+
+        for (int j = 0; j < NUMBER_OF_TANK; j++) {
+
+            Tank* e = pAI->GetEnemyTank(j);
+            if (e->GetHP() <= 0) continue;
+            int dtx = 0, dty = 0;
+            int d = e->GetDirection();
+            if (d == 1) dty = -1;
+            if (d == 2) dtx = 1;
+            if (d == 3) dty = 1;
+            if (d == 4) dtx = -1;
+
+            float distance = abs((e->GetX() - t->GetX()) * dx[i]) + abs((e->GetY() - t->GetY()) * dy[i]);
+
+             
+            float bulletSpeed = 1;
+
+            float time = distance / bulletSpeed;
+
+            hitbox targetHitbox = toHB(e->GetX()-0.5, e->GetY()-0.5, 1, 1, dtx, dty, e->GetSpeed() * time);
+
+
+            if (lineHitbox.x1<targetHitbox.x2
+                && lineHitbox.x2>targetHitbox.x1
+                && lineHitbox.y1<targetHitbox.y2
+                && lineHitbox.y2>targetHitbox.y1) {
+                return i;
+            }
+        }
+    }
+
+    return 0;
+
+}
+
+
+
+
+
+
+
+
+
+
+int castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bool costAffect) {
     int cx = sx;
     int cy = sy;
     int cur = startVal;
 
+    //Calculate how far the ray can go
+    int dist = 0;
+
     while (true) {
 
         if (!isShootable(pAI, cx, cy)) break;
+        dist++;
 
         grid[cx][cy] += cur;
         if (costAffect) cost[cx][cy] += cur;
@@ -67,6 +153,7 @@ void castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, b
         cx += dx;
         cy += dy;
     }
+    return dist;
 }
 
 void calculateMap(AI* pAI) {
@@ -111,10 +198,10 @@ void calculateMap(AI* pAI) {
         }
 
 
-        castRay(pAI, tx, ty, 0, -1, 500, 0, false); // Up
-        castRay(pAI, tx, ty, 0, 1, 500, 0, false); // Down
-        castRay(pAI, tx, ty, -1, 0, 500, 0, false); // Left
-        castRay(pAI, tx, ty, 1, 0, 500, 0, false); // Right
+        castRay(pAI, tx, ty-1, 0, -1, 500, 0, false); // Up
+        castRay(pAI, tx+1, ty, 0, 1, 500, 0, false); // Down
+        castRay(pAI, tx-1, ty, -1, 0, 500, 0, false); // Left
+        castRay(pAI, tx, ty+1, 1, 0, 500, 0, false); // Right
     }
 }
 
@@ -182,12 +269,11 @@ int getSmartMove(AI* pAI, int id) {
 
         if (dx[dir] == 1)       nextFX = floor(fx + eps) + 1; // Right: 6.75 -> 7; 7.0 -> 8
         else if (dx[dir] == -1) nextFX = ceil(fx - eps) - 1;  // Left:  6.75 -> 6; 7.0 -> 6
-        else                    nextFX = fx + 0.5 * dx[dir];           // Vertical: Keep current X Round
+        else                    nextFX = fx;           // Vertical: Keep current X
 
-        // 2. Calculate Next Y Integer
         if (dy[dir] == 1)       nextFY = floor(fy + eps) + 1; // Down
         else if (dy[dir] == -1) nextFY = ceil(fy - eps) - 1;  // Up
-        else                    nextFY = fy + 0.5 * dy[dir];
+        else                    nextFY = fy;
 
         // Does the tank FIT there?
         if (isWalkable(pAI, nextFX, nextFY)) {
