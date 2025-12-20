@@ -129,7 +129,6 @@ void AI_Update()
 	// In this example, I go through all of my "still intact" tanks, and give them random commands.
 	// =========================================================================================================
 	// Loop through all tank (if not dead yet)
-	calculateMap(p_AI);
 	for (int i = 0; i<NUMBER_OF_TANK; i++) {
 		Tank* tempTank = p_AI->GetMyTank(i);
 		//don't waste effort if tank's death

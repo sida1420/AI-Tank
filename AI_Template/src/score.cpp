@@ -3,6 +3,7 @@
 
 int grid[22][22];
 int cost[22][22];
+bool used[22][22];
 
 
 
@@ -13,7 +14,7 @@ bool isWalkable(AI* pAI, float x, float y) {
     for (int i= floor(x+0.01); i <= ceil(x-0.01); i++) {
         for (int j = floor(y + 0.01); j <= ceil(y - 0.01); j++) {
             int b = pAI->GetBlock(i, j);
-            if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE || b == BLOCK_WATER)
+            if (b == BLOCK_HARD_OBSTACLE || b == BLOCK_SOFT_OBSTACLE || b == BLOCK_WATER ||b==BLOCK_BASE)
                 return false;
         }
     }
@@ -77,9 +78,13 @@ int trigger(AI* pAI, int id) {
     //List all hitboxes of enemy tank
     int dx[] = { 0, 0, 1, 0, -1 };
     int dy[] = { 0, -1, 0, 1, 0 };
+
+    std::vector<std::pair<float, int>> targetHitboxes;
+
     for (int i = 1; i <= 4; i++) {
         int dist = castRay(pAI, t->GetX(), t->GetY(), dx[i], dy[i], 0, 0);
         hitbox lineHitbox( t->GetX(),t->GetY(),t->GetX() + dx[i] *  dist, t->GetY() +dy[i] * dist );
+
 
         for (int j = 0; j < NUMBER_OF_TANK; j++) {
 
@@ -94,21 +99,47 @@ int trigger(AI* pAI, int id) {
 
             float distance = abs((e->GetX() - t->GetX()) * dx[i]) + abs((e->GetY() - t->GetY()) * dy[i]);
 
-             
             float bulletSpeed = 1;
 
             float time = distance / bulletSpeed;
+            hitbox  targetHitbox =toHB(e->GetX() - 0.5, e->GetY() - 0.5, 1, 1, dtx, dty, min(2.f, max(0.f,e->GetSpeed() * time-0.9f)));
 
-            hitbox targetHitbox = toHB(e->GetX()-0.5, e->GetY()-0.5, 1, 1, dtx, dty, e->GetSpeed() * time);
 
 
             if (lineHitbox.x1<targetHitbox.x2
                 && lineHitbox.x2>targetHitbox.x1
                 && lineHitbox.y1<targetHitbox.y2
                 && lineHitbox.y2>targetHitbox.y1) {
-                return i;
+                targetHitboxes.push_back({distance, i });
+            }
+            
+        }
+
+        auto bases = pAI->GetEnemyBases();
+        for (auto b: bases) {
+            if (b->GetHP() <= 0) continue;
+            int dtx = 0, dty = 0;
+
+            float distance = abs((b->GetX() - t->GetX()) * dx[i]) + abs((b->GetY() - t->GetY()) * dy[i]);
+
+            float bulletSpeed = 1;
+
+            float time = distance / bulletSpeed;
+
+            hitbox targetHitbox = toHB(b->GetX() - 1, b->GetY() - 1, 2, 2, dtx, dty, 0);
+
+
+            if (lineHitbox.x1<targetHitbox.x2
+                && lineHitbox.x2>targetHitbox.x1
+                && lineHitbox.y1<targetHitbox.y2
+                && lineHitbox.y2>targetHitbox.y1) {
+                targetHitboxes.push_back({ 100+distance, i });
             }
         }
+    }
+    std::sort(targetHitboxes.begin(), targetHitboxes.end());
+    for (auto h : targetHitboxes) {
+        return h.second;
     }
 
     return 0;
@@ -118,7 +149,7 @@ int trigger(AI* pAI, int id) {
 
 
 
-int castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bool costAffect) {
+int castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bool tank ) {
     int cx = sx;
     int cy = sy;
     int cur = startVal;
@@ -131,8 +162,38 @@ int castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bo
         if (!isShootable(pAI, cx, cy)) break;
         dist++;
 
-        grid[cx][cy] += cur;
-        if (costAffect) cost[cx][cy] += cur;
+        if (tank) {
+            if (used[cx][cy])
+                grid[cx][cy] -= cur;
+            else {
+                used[cx][cy] = true;
+                grid[cx][cy] += cur;
+            }
+        }else grid[cx][cy] += cur;
+
+        if (startVal < 0) cur += decay;
+        else cur -= decay;
+
+        if ((startVal < 0 && cur >= 0) || (startVal > 0 && cur <= 0)) break;
+        cx += dx;
+        cy += dy;
+    }
+    return dist;
+}
+int castRayCost(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay) {
+    int cx = sx;
+    int cy = sy;
+    int cur = startVal;
+
+    //Calculate how far the ray can go
+    int dist = 0;
+
+    while (true) {
+
+        if (!isShootable(pAI, cx, cy)) break;
+        dist++;
+
+        cost[cx][cy] += cur;
 
         if (startVal < 0) cur += decay;
         else cur -= decay;
@@ -144,11 +205,14 @@ int castRay(AI* pAI, int sx, int sy, int dx, int dy, int startVal, int decay, bo
     return dist;
 }
 
-void calculateMap(AI* pAI) {
+
+void calculateMap(AI* pAI, int id) {
+    auto tank = pAI->GetMyTank(id);
     // A. Reset Grid
     for (int y = 0; y < 22; y++)
         for (int x = 0; x < 22; x++)
         {
+            used[x][y]=false;
             if (isWalkable(pAI, x, y)) {
                 grid[x][y] = 0;
                 cost[x][y] = 0;
@@ -156,7 +220,7 @@ void calculateMap(AI* pAI) {
             }
             else {
                 grid[x][y] = -10000;
-                cost[x][y] = -10000;
+                cost[x][y] = 10000;
             }
         }
 
@@ -172,7 +236,8 @@ void calculateMap(AI* pAI) {
         if (d == 3) dy = 1;
         if (d == 4) dx = -1;
 
-        castRay(pAI, round(b->GetX()), round(b->GetY()), dx, dy, -500*b->GetDamage(), 500, true);
+        castRay(pAI, round(b->GetX()), round(b->GetY()), dx, dy, -500*b->GetDamage()*b->GetSpeed(), 500);
+        castRayCost(pAI, round(b->GetX()), round(b->GetY()), dx, dy, 500 * b->GetDamage() * b->GetSpeed(), 500);
     }
 
     // C. Mark Enemies
@@ -185,12 +250,54 @@ void calculateMap(AI* pAI) {
             continue;
         }
 
-
-        castRay(pAI, tx, ty-1, 0, -1, 500, 0, false); // Up
-        castRay(pAI, tx+1, ty, 0, 1, 500, 0, false); // Down
-        castRay(pAI, tx-1, ty, -1, 0, 500, 0, false); // Left
-        castRay(pAI, tx, ty+1, 1, 0, 500, 0, false); // Right
+        int start= 600 - t->GetHP() + t->GetCoolDown() + tank->GetHP() - tank->GetCoolDown();
+        castRay(pAI, tx, ty-1, 0, -1, start, 0, true); // Up
+        castRay(pAI, tx, ty+1, 0, 1, start, 0, true); // Down
+        castRay(pAI, tx-1, ty, -1, 0, start, 0, true); // Left
+        castRay(pAI, tx+1, ty, 1, 0, start, 0, true); // Right
     }
+
+    // D. Mark power up
+
+    auto powerups = pAI->GetPowerUpList();
+    for (auto p : powerups) {
+        grid[(int)round(p->GetX())][(int)round(p->GetY())] += 5000;
+    }
+
+    // E. Mark in coming strikes
+
+    auto strikes = pAI->GetIncomingStrike();
+    for (auto s : strikes) {
+
+        int sx = round(s->GetX());
+        int sy = round(s->GetY());
+        for (int x = sx - 3; x <= sx + 3; x++) {
+            for (int y = sy - 3; y <= sy + 3; y++) {
+                if (x >= 0 && x < 22 && y >= 0 && y < 22) {
+                    grid[x][y] -= 5000;
+                    cost[x][y] += 5000; 
+                }
+            }
+        }
+    }
+
+    //F: Mark basesauto powerups = pAI->GetPowerUpList();
+    auto bases = pAI->GetEnemyBases();
+    for (auto b: bases) {
+        if (b->GetHP() <= 0) continue;
+        int tx = b->GetX()-0.5;
+        int ty = b->GetY()-0.5;
+
+        castRay(pAI, tx, ty - 1, 0, -1, 400, 0); // Up
+        castRay(pAI, tx+1, ty - 1, 0, -1, 400, 0); // Up
+        castRay(pAI, tx, ty+2, 0, 1, 400, 0); // Down
+        castRay(pAI, tx+1, ty+2, 0, 1, 400, 0); // Down
+        castRay(pAI, tx - 1, ty, -1, 0, 400, 0); // Left
+        castRay(pAI, tx - 1, ty+1, -1, 0, 400, 0); // Left
+        castRay(pAI, tx + 2, ty, 1, 0, 400, 0); // Right
+        castRay(pAI, tx + 2, ty+1, 1, 0, 400, 0); // Right
+    }
+
 }
 
 struct Node { int x, y, g, h, firstDir;
@@ -205,6 +312,10 @@ struct Node { int x, y, g, h, firstDir;
 // =========================================================
 int getSmartMove(AI* pAI, int id) {
     auto tank = pAI->GetMyTank(id);
+
+    calculateMap(pAI, id);
+
+
     int myX = round(tank->GetX());
     int myY = round(tank->GetY());
     float fx = tank->GetX();
