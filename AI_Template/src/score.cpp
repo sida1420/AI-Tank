@@ -7,15 +7,6 @@ int cost[22][22];
 
 
 
-
-
-
-
-
-
-
-
-
 bool isWalkable(AI* pAI, float x, float y) {
     if (x <= 0 || x >= 21 || y <= 0 || y >= 21) return false;
 
@@ -60,19 +51,22 @@ bool isShootable(AI* pAI, float x, float y) {
 
 struct hitbox {
     float x1, x2, y1, y2;
-    hitbox(float x1, float x2, float y1, float y2) {
+    hitbox(float x1, float y1, float x2, float y2) {
         this->x1 = min(x1, x2);
         this->x2 = max(x1, x2);
         this->y1 = min(y1, y2);
-        this->y2 = min(y1, y2);
+        this->y2 = max(y1, y2);
     }
 };
  
 
 hitbox toHB(float x, float y, float width, float height, int dx, int dy, float v) {
-    float x1=min(x,x+dx*v), x2=max(x+width,x+width+dx*v), y1=min(y,y+dy*v), y2=max(y+height,y+height+dy*v);
+    float x1 = min(x, x + dx * v);
+    float x2 = max(x + width, x + width + dx * v);
+    float y1 = min(y, y + dy * v);
+    float y2 = max(y + height, y + height + dy * v);
 
-    hitbox hb( x1,x2,y1,y2 );
+    hitbox hb(x1, y1, x2, y2);
     return hb;
 }
 
@@ -120,12 +114,6 @@ int trigger(AI* pAI, int id) {
     return 0;
 
 }
-
-
-
-
-
-
 
 
 
@@ -238,7 +226,7 @@ int getSmartMove(AI* pAI, int id) {
             // Distance Cost: 10 points per step.
             // This ensures we pick the NEAREST tile on the "Shooting Line".
             int dist = abs(i - myX) + abs(j - myY);
-            int score = grid[i][j] - (dist * 100)-(collision(pAI,i,j,id)?5000:0);
+            int score = grid[i][j] - (dist * 10)-(collision(pAI,i,j,id)?5000:0);
 
             if (score > bestScore) {
                 bestScore = score;

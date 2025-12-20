@@ -138,8 +138,9 @@ void AI_Update()
 		
 		// Run randomly and fire as soon as cooldown finish.
 		// You may want a more ... intelligent algorithm here.
-
-		int shoot = trigger(p_AI, i);
+		int shoot = 0;
+		if(tempTank->GetCoolDown()<=0)
+			shoot = trigger(p_AI, i);
 		int dir = getSmartMove(p_AI, i);
 		if (shoot == 0) {
 			bool move = (dir == 0) ? false : true;
