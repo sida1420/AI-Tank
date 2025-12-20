@@ -68,8 +68,8 @@ void AI_Placement()
 	}
 	else if (p_AI->GetMyTeam() == TEAM_2) {
 		Game::PlaceTank(TANK_LIGHT, 16, 2);
-		Game::PlaceTank(TANK_LIGHT, 17, 8);
-		Game::PlaceTank(TANK_LIGHT, 17, 13);
+		Game::PlaceTank(TANK_LIGHT, 16, 4);
+		Game::PlaceTank(TANK_LIGHT, 16, 7);
 		Game::PlaceTank(TANK_MEDIUM, 16, 19);
 	}
 }
@@ -139,10 +139,24 @@ void AI_Update()
 		// Run randomly and fire as soon as cooldown finish.
 		// You may want a more ... intelligent algorithm here.
 		int dir = getSmartMove(p_AI, i);
-		bool move = (dir == 0) ? false : true;
-		bool fire = false;
+		int shoot = 0;
+		if (tempTank->GetCoolDown() == 0) {
 
-		Game::CommandTank(i, (dir==0)?NULL:dir, move, fire);
+			shoot = trigger_attack2(i);
+		}
+
+		if (shoot == 0) {
+			bool move = (dir == 0) ? false : true;
+
+			std::cout<<tempTank->GetX()<<" "<<tempTank->GetY()<<" " << dir << endl;
+			Game::CommandTank(i, (dir == 0) ? NULL : dir, move, false);
+
+		}
+		else {
+			bool move = dir == shoot;
+			std::cout << tempTank->GetX() << " " << tempTank->GetY() << " " << shoot << endl;
+			Game::CommandTank(i, shoot, move, true);
+		}
 		/*
 		if (rand() % 100 > 90) {
 			int direction = rand() % 4 + 1;
