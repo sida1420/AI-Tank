@@ -355,6 +355,7 @@ int move(AI* ai, int id) {
 
 			node temp = { gx,gy,g,h,t,n.dir };
 			pq.push(temp);
+
 		}
 
 		limit--;
