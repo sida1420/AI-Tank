@@ -60,16 +60,16 @@ void AI_Placement()
 {
 	AI *p_AI = AI::GetInstance();
 	if (p_AI->GetMyTeam() == TEAM_1) {
-		Game::PlaceTank(TANK_LIGHT, 1, 5);
+		Game::PlaceTank(TANK_MEDIUM, 1, 5);
 		Game::PlaceTank(TANK_LIGHT, 3, 8);
 		Game::PlaceTank(TANK_LIGHT, 6, 10);
-		Game::PlaceTank(TANK_LIGHT, 4, 14);
+		Game::PlaceTank(TANK_HEAVY, 4, 14);
 	}
 	else if (p_AI->GetMyTeam() == TEAM_2) {
-		Game::PlaceTank(TANK_LIGHT, 16, 2);
+		Game::PlaceTank(TANK_MEDIUM, 16, 2);
 		Game::PlaceTank(TANK_LIGHT, 17, 8);
 		Game::PlaceTank(TANK_LIGHT, 17, 13);
-		Game::PlaceTank(TANK_LIGHT, 16, 19);
+		Game::PlaceTank(TANK_HEAVY, 16, 19);
 	}
 }
 
@@ -133,10 +133,9 @@ void AI_Update()
 		if ((tempTank == NULL) || (tempTank->GetHP() == 0))
 			continue;
 		
-		int dir = move(p_AI, i);
-		cout << dir << endl;
-		int shoot = trigger(p_AI, i);
-		cout << shoot << endl;
+		int dir = move(i);
+		int shoot = 0;
+		if(!danger(i)) shoot=trigger(i);
 		if (shoot != 0&&tempTank->GetCoolDown()<=0) {
 			Game::CommandTank(i, shoot, shoot == dir, true);
 		}

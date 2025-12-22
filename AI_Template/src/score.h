@@ -2,5 +2,7 @@
 #include <iostream>
 #include <ai/AI.h>
 #include <queue>
-int trigger(AI* ai, int id);
-int move(AI* ai, int id);
+using namespace std;
+bool danger(int id);
+int trigger(int id);
+int move(int id);
